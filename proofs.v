@@ -121,13 +121,13 @@ Section Mboxes.
   | MboxEmpty : Mbox
   | MboxCons : Message -> Mbox -> Mbox.
 
-  Fixpoint push (m : Message) (mb : Mbox) : Mbox :=
+  Fixpoint enq (m : Message) (mb : Mbox) : Mbox :=
     match mb with
     | MboxEmpty => MboxCons m MboxEmpty
-    | MboxCons m' mb' => MboxCons m' (push m mb')
+    | MboxCons m' mb' => MboxCons m' (enq m mb')
     end.
 
-  Definition pop (mb : Mbox) : Ensemble (Message * Mbox)  :=
+  Definition deq (mb : Mbox) : Ensemble (Message * Mbox)  :=
     match mb with
     | MboxEmpty => Empty_set (Message * Mbox)
     | MboxCons m' mb' => Singleton (Message * Mbox) (m', mb')
@@ -139,16 +139,16 @@ Section Mboxes.
     | MboxCons _ mb' => S (size mb')
     end.
 
-  Lemma pop_removes_1 : forall m mb mb', In (Message * Mbox) (pop mb) (m, mb') -> size mb = S (size mb').
+  Lemma deq_removes_1 : forall m mb mb', In (Message * Mbox) (deq mb) (m, mb') -> size mb = S (size mb').
   Proof.
     intros. destruct mb; inversion H; subst; auto.
   Qed.
 
-  Lemma pop_smaller : forall m mb mb', In (Message * Mbox) (pop mb) (m, mb') -> size mb' < size mb.
-    intros. rewrite (pop_removes_1 m mb mb' H). constructor.
+  Lemma deq_smaller : forall m mb mb', In (Message * Mbox) (deq mb) (m, mb') -> size mb' < size mb.
+    intros. rewrite (deq_removes_1 m mb mb' H). constructor.
   Qed.
 
-  Lemma push_size_add1 : forall m mb, size (push m mb) = S (size mb).
+  Lemma enq_size_add1 : forall m mb, size (enq m mb) = S (size mb).
   Proof.
     intros. induction mb. reflexivity.
     simpl. rewrite IHmb. reflexivity.
@@ -176,42 +176,47 @@ Section Mboxes.
   | NatInf_subsumed_abs_inf : NatInf_subsumed_abs Inf Inf
   | NatInf_subsumed_abs_both : forall x, NatInf_subsumed_abs (Nat x) Inf.
 
-  Definition push_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox) (apush : Message -> AbsMbox -> AbsMbox) :=
+  Definition enq_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox) (aenq : Message -> AbsMbox -> AbsMbox) :=
     forall (m : Message) (mb : Mbox),
-      alpha (push m mb) = apush m (alpha mb).
+      alpha (enq m mb) = aenq m (alpha mb).
+  Check enq_sound.
 
-  Definition pop_sound_overapprox (AbsMbox : Type) (alpha : Mbox -> AbsMbox) (subsumed : AbsMbox -> AbsMbox -> Prop) (apop : AbsMbox -> Ensemble (Message * AbsMbox)) :=
+  Definition deq_sound_overapprox (AbsMbox : Type) (alpha : Mbox -> AbsMbox) (subsumed : AbsMbox -> AbsMbox -> Prop) (adeq : AbsMbox -> Ensemble (Message * AbsMbox)) :=
     forall (m : Message) (mb mb' : Mbox),
-      In (Message * Mbox) (pop mb) (m, mb') ->
+      In (Message * Mbox) (deq mb) (m, mb') ->
       (exists absmb,
-          (In (Message * AbsMbox) (apop (alpha mb)) (m, absmb)) /\
+          (In (Message * AbsMbox) (adeq (alpha mb)) (m, absmb)) /\
           (subsumed (alpha mb') absmb)).
+  Check deq_sound_overapprox.
 
-  Definition pop_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox)
-             (apop : AbsMbox -> Ensemble (Message * AbsMbox)) :=
+  Definition deq_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox)
+             (adeq : AbsMbox -> Ensemble (Message * AbsMbox)) :=
     forall (m : Message) (mb mb' : Mbox),
-      In (Message * Mbox) (pop mb) (m, mb') ->
-      In (Message * AbsMbox) (apop (alpha mb)) (m, alpha mb').
+      In (Message * Mbox) (deq mb) (m, mb') ->
+      In (Message * AbsMbox) (adeq (alpha mb)) (m, alpha mb').
+  Check deq_sound.
 
   Definition size_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox)
                 (asize : AbsMbox -> NatInf -> Prop) :=
     forall (mb : Mbox) (n : NatInf),
       asize (alpha mb) n ->
       NatInf_subsumed (size mb) n.
+  Check size_sound.
 
   Definition empty_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox) (aempty : AbsMbox) :=
     alpha MboxEmpty = aempty.
   Hint Unfold empty_sound.
+  Check empty_sound.
 
   Definition abstraction_sound (AbsMbox : Type) (alpha : Mbox -> AbsMbox)
              (subsumed : AbsMbox -> AbsMbox -> Prop)
-             (apush : Message -> AbsMbox -> AbsMbox)
-             (apop : AbsMbox -> Ensemble (Message * AbsMbox))
+             (aenq : Message -> AbsMbox -> AbsMbox)
+             (adeq : AbsMbox -> Ensemble (Message * AbsMbox))
              (asize : AbsMbox -> NatInf -> Prop)
              (aempty : AbsMbox) :=
-    push_sound AbsMbox alpha apush /\
-    (pop_sound AbsMbox alpha apop \/
-     pop_sound_overapprox AbsMbox alpha subsumed apop) /\
+    enq_sound AbsMbox alpha aenq /\
+    (deq_sound AbsMbox alpha adeq \/
+     deq_sound_overapprox AbsMbox alpha subsumed adeq) /\
     size_sound AbsMbox alpha asize /\
     empty_sound AbsMbox alpha aempty.
 
@@ -226,21 +231,21 @@ Section Mboxes.
       end.
     Definition SetMbox_subsumed (mb mb' : SetMbox) : Prop := Same_set Message mb mb'.
 
-    Definition SetMbox_push (m : Message) (mb : SetMbox) : SetMbox :=
+    Definition SetMbox_enq (m : Message) (mb : SetMbox) : SetMbox :=
       Union Message (Singleton Message m) mb.
 
-    Inductive SetMbox_pop (mb : SetMbox) : (Ensemble (Message * SetMbox)) :=
-    | SetMbox_pop_keep : forall m: Message,
-        In Message mb m -> In (Message * SetMbox) (SetMbox_pop mb) (m, mb)
-    | SetMbox_pop_drop : forall m: Message,
-        In Message mb m -> In (Message * SetMbox) (SetMbox_pop mb) (m, Subtract Message mb m).
+    Inductive SetMbox_deq (mb : SetMbox) : (Ensemble (Message * SetMbox)) :=
+    | SetMbox_deq_keep : forall m: Message,
+        In Message mb m -> In (Message * SetMbox) (SetMbox_deq mb) (m, mb)
+    | SetMbox_deq_drop : forall m: Message,
+        In Message mb m -> In (Message * SetMbox) (SetMbox_deq mb) (m, Subtract Message mb m).
 
     Inductive SetMbox_size : SetMbox -> NatInf -> Prop :=
     | SetMbox_size_empty : SetMbox_size SetMboxEmpty (Nat 0)
     | SetMbox_size_nonempty : forall (mb : SetMbox), Inhabited _ mb -> SetMbox_size mb Inf.
 
-    Lemma SetMbox_alpha_after_push : forall m mb,
-        SetMbox_alpha (push m mb) = Union Message (Singleton Message m) (SetMbox_alpha mb).
+    Lemma SetMbox_alpha_after_enq : forall m mb,
+        SetMbox_alpha (enq m mb) = Union Message (Singleton Message m) (SetMbox_alpha mb).
     Proof.
       intros. induction mb as [| m' mb'].
       (* mb empty *)
@@ -249,34 +254,35 @@ Section Mboxes.
       - simpl. rewrite IHmb'. apply union_assoc2.
     Qed.
 
-    Lemma SetMbox_push_sound : push_sound SetMbox SetMbox_alpha SetMbox_push.
+    Lemma SetMbox_enq_sound : enq_sound SetMbox SetMbox_alpha SetMbox_enq.
     Proof.
-      unfold push_sound. intros.
-      rewrite SetMbox_alpha_after_push. unfold SetMbox_push. reflexivity.
+      unfold enq_sound. intros.
+      rewrite SetMbox_alpha_after_enq. unfold SetMbox_enq. reflexivity.
     Qed.
-    Hint Resolve SetMbox_push_sound.
+    Hint Resolve SetMbox_enq_sound.
+    Check SetMbox_enq_sound.
 
-    Lemma pop_union_singleton_keep : forall m mb,
+    Lemma deq_union_singleton_keep : forall m mb,
         In Message mb m ->
         In (Message * SetMbox)
-           (SetMbox_pop (Union Message (Singleton Message m) mb))
+           (SetMbox_deq (Union Message (Singleton Message m) mb))
            (m, mb).
     Proof.
       intros. rewrite (union_already_in Message mb m H).
       constructor. assumption.
     Qed.
 
-    Lemma pop_union_singleton_drop : forall m mb,
+    Lemma deq_union_singleton_drop : forall m mb,
         not (In Message mb m) ->
         In (Message * SetMbox)
-           (SetMbox_pop (Union Message (Singleton Message m) mb))
+           (SetMbox_deq (Union Message (Singleton Message m) mb))
            (m, mb).
     Proof.
       intros.
       rewrite (subtract_not Message mb m H) at 2.
       rewrite subtract_in.
       rewrite Union_commutative.
-      apply SetMbox_pop_drop. apply Union_intror. constructor.
+      apply SetMbox_deq_drop. apply Union_intror. constructor.
     Qed.
 
     Lemma mbox_contains_or_not : forall m mb,
@@ -292,9 +298,9 @@ Section Mboxes.
       apply H. apply H2.
     Qed.
 
-    Lemma SetMbox_pop_sound : pop_sound SetMbox SetMbox_alpha SetMbox_pop.
+    Lemma SetMbox_deq_sound : deq_sound SetMbox SetMbox_alpha SetMbox_deq.
     Proof.
-      unfold pop_sound.
+      unfold deq_sound.
       intros. destruct mb
       (* empty mb: no message *).
       inversion H.
@@ -302,11 +308,12 @@ Section Mboxes.
       inversion H; subst.
       destruct (mbox_contains_or_not m mb').
       (* contains *)
-      simpl. apply pop_union_singleton_keep. assumption.
+      simpl. apply deq_union_singleton_keep. assumption.
       (* does not contain *)
-      apply pop_union_singleton_drop. assumption.
+      apply deq_union_singleton_drop. assumption.
     Qed.
-    Hint Resolve SetMbox_pop_sound.
+    Hint Resolve SetMbox_deq_sound.
+    Check SetMbox_deq_sound.
 
     Lemma SetMbox_size_sound : size_sound SetMbox SetMbox_alpha SetMbox_size.
     Proof.
@@ -323,19 +330,22 @@ Section Mboxes.
       constructor.
     Qed.
     Hint Resolve SetMbox_size_sound.
+    Check SetMbox_size_sound.
 
     Lemma SetMbox_empty_sound : empty_sound SetMbox SetMbox_alpha SetMboxEmpty.
     Proof. auto. Qed.
     Hint Resolve SetMbox_empty_sound.
+   Check SetMbox_empty_sound.
 
     Theorem SetMbox_sound :
       abstraction_sound SetMbox SetMbox_alpha SetMbox_subsumed
-                          SetMbox_push SetMbox_pop
+                          SetMbox_enq SetMbox_deq
                           SetMbox_size SetMboxEmpty.
     Proof.
       unfold abstraction_sound.
       auto.
     Qed.
+    Check SetMbox_sound.
   End SetMboxes.
 
   Section BList.
@@ -372,6 +382,7 @@ Section Mboxes.
     Lemma BListMbox_empty_sound : empty_sound BListMbox BListMbox_alpha BListMboxEmpty.
     Proof. auto. Qed.
     Hint Resolve BListMbox_empty_sound.
+    Check BListMbox_empty_sound.
 
     Inductive BListMbox_size : (BListMbox -> NatInf -> Prop) :=
     | BListMbox_size_infinite : forall s, BListMbox_size (BListMbox_set s) Inf
@@ -391,42 +402,44 @@ Section Mboxes.
       inversion H1.
     Qed.
     Hint Resolve BListMbox_size_sound.
+    Check BListMbox_size_sound.
 
-    Definition BListMbox_push (m : Message) (mb : BListMbox) : BListMbox :=
+    Definition BListMbox_enq (m : Message) (mb : BListMbox) : BListMbox :=
       match mb with
-      | BListMbox_set mb' => BListMbox_set (SetMbox_push m mb')
-      | BListMbox_list mb' => BListMbox_alpha (push m mb')
+      | BListMbox_set mb' => BListMbox_set (SetMbox_enq m mb')
+      | BListMbox_list mb' => BListMbox_alpha (enq m mb')
       end.
 
-    Lemma BListMbox_push_sound : push_sound BListMbox BListMbox_alpha BListMbox_push.
+    Lemma BListMbox_enq_sound : enq_sound BListMbox BListMbox_alpha BListMbox_enq.
     Proof.
-      unfold push_sound. intros.
-      unfold BListMbox_alpha. rewrite push_size_add1.
+      unfold enq_sound. intros.
+      unfold BListMbox_alpha. rewrite enq_size_add1.
       destruct (le_dec (size mb) max).
       (* size mb <= max *)
-      - simpl. unfold BListMbox_alpha. rewrite push_size_add1. reflexivity.
+      - simpl. unfold BListMbox_alpha. rewrite enq_size_add1. reflexivity.
       (* size mb > max *)
       - simpl. destruct (le_dec (S (size mb)) max).
         (* S (size mb) <= max: impossible *)
         -- exfalso. apply n. apply le_Sn_le. assumption.
         (* S (size mb) > max *)
-        -- rewrite SetMbox_push_sound. reflexivity.
+        -- rewrite SetMbox_enq_sound. reflexivity.
     Qed.
-    Hint Resolve BListMbox_push_sound.
+    Hint Resolve BListMbox_enq_sound.
+    Check BListMbox_enq_sound.
 
-    Inductive BListMbox_pop (mb : BListMbox) : (Ensemble (Message * BListMbox)) :=
-    | BListMbox_pop_set : forall m s s',
+    Inductive BListMbox_deq (mb : BListMbox) : (Ensemble (Message * BListMbox)) :=
+    | BListMbox_deq_set : forall m s s',
         mb = BListMbox_set s ->
         In (Message * SetMbox)
-           (SetMbox_pop s) (m, s') ->
+           (SetMbox_deq s) (m, s') ->
         In (Message * BListMbox)
-           (BListMbox_pop mb) (m, BListMbox_set s')
-    | BListMbox_pop_list : forall m l l',
+           (BListMbox_deq mb) (m, BListMbox_set s')
+    | BListMbox_deq_list : forall m l l',
         mb = BListMbox_list l ->
         In (Message * Mbox)
-           (pop l) (m, l') ->
+           (deq l) (m, l') ->
         In (Message * BListMbox)
-           (BListMbox_pop mb) (m, BListMbox_list l').
+           (BListMbox_deq mb) (m, BListMbox_list l').
 
     Lemma BListMbox_subsumed_by_set : forall mb, BListMbox_subsumed (BListMbox_alpha mb) (BListMbox_set (SetMbox_alpha mb)).
     Proof.
@@ -439,33 +452,33 @@ Section Mboxes.
         apply BListMbox_subsumed_same.
     Qed.
 
-    Lemma BListMbox_pop_set_from_set : forall m mb mb',
+    Lemma BListMbox_deq_set_from_set : forall m mb mb',
         In (Message * SetMbox)
-           (SetMbox_pop mb) (m, mb') ->
+           (SetMbox_deq mb) (m, mb') ->
         In (Message * BListMbox)
-           (BListMbox_pop (BListMbox_set mb)) (m, BListMbox_set mb').
+           (BListMbox_deq (BListMbox_set mb)) (m, BListMbox_set mb').
     Proof.
-      intros. apply (BListMbox_pop_set (BListMbox_set mb) m mb mb'); auto.
+      intros. apply (BListMbox_deq_set (BListMbox_set mb) m mb mb'); auto.
     Qed.
 
-    Lemma BListMbox_pop_sound_overapprox : pop_sound_overapprox BListMbox BListMbox_alpha BListMbox_subsumed BListMbox_pop.
+    Lemma BListMbox_deq_sound_overapprox : deq_sound_overapprox BListMbox BListMbox_alpha BListMbox_subsumed BListMbox_deq.
     Proof.
-      unfold pop_sound_overapprox. intros.
+      unfold deq_sound_overapprox. intros.
       destruct (le_dec (size mb) max).
-      - (* size mb <= max: list pop *)
+      - (* size mb <= max: list deq *)
         exists (BListMbox_alpha mb').
         split.
-        -- (* left: show that (m, alpha mb') in pop (alpha mb) *)
+        -- (* left: show that (m, alpha mb') in deq (alpha mb) *)
           unfold BListMbox_alpha.
           destruct (le_dec (size mb) max).
           --- (* size mb <= max *)
             destruct (le_dec (size mb') max).
             ---- (* size mb' <= max *)
-              apply (BListMbox_pop_list (BListMbox_list mb) m mb mb'). reflexivity.
+              apply (BListMbox_deq_list (BListMbox_list mb) m mb mb'). reflexivity.
               assumption.
             ---- (* size mb' > max: impossible *)
               exfalso. apply n.
-              apply le_S_n. rewrite <- (pop_removes_1 m mb mb').
+              apply le_S_n. rewrite <- (deq_removes_1 m mb mb').
               apply le_S. assumption. assumption.
          --- (* size mb > max: impossible *)
            exfalso; apply n; apply l.
@@ -476,15 +489,14 @@ Section Mboxes.
         -- (* size mb' = max: BListMbox_alpha mb' is a list, and is subsumed *)
           exists (BListMbox_set (SetMbox_alpha mb')).
           split.
-          --- (* left: show that (m, alpha_PS mb') in pop (alpha mb) *)
+          --- (* left: show that (m, alpha_PS mb') in deq (alpha mb) *)
             unfold BListMbox_alpha.
             destruct (le_dec (size mb) max).
             ---- (* size mb <= max: impossible *)
               exfalso; apply n; assumption.
             ---- (* size mb > max *)
-              Check BListMbox_pop_set_from_set.
-              apply BListMbox_pop_set_from_set.
-              apply SetMbox_pop_sound. assumption.
+              apply BListMbox_deq_set_from_set.
+              apply SetMbox_deq_sound. assumption.
           --- (* right: show that alpha mb' subsumed alpha_PS mb' *)
             apply BListMbox_subsumed_by_set.
        -- (* size mb' > max: BListMbox_alpha mb' is a set, and is equal *)
@@ -498,24 +510,26 @@ Section Mboxes.
           ---- (* size mb > max *)
             destruct (le_dec (size mb') max).
             exfalso. inversion l; subst. apply n0; reflexivity.
-            rewrite (pop_removes_1 m mb mb') in n1. apply n1.
+            rewrite (deq_removes_1 m mb mb') in n1. apply n1.
             apply le_and_neq; assumption. assumption.
             (* set *)
-            apply BListMbox_pop_set_from_set.
-            apply SetMbox_pop_sound. assumption.
+            apply BListMbox_deq_set_from_set.
+            apply SetMbox_deq_sound. assumption.
         --- (* right *)
           apply BListMbox_subsumed_same.
     Qed.
-    Hint Resolve BListMbox_pop_sound_overapprox.
+    Hint Resolve BListMbox_deq_sound_overapprox.
+    Check BListMbox_deq_sound_overapprox.
 
     Theorem BListMbox_sound :
       abstraction_sound BListMbox BListMbox_alpha BListMbox_subsumed
-                        BListMbox_push BListMbox_pop
+                        BListMbox_enq BListMbox_deq
                         BListMbox_size BListMboxEmpty.
     Proof.
       unfold abstraction_sound.
       auto.
     Qed.
+    Check BListMbox_sound.
   End BList.
 
   Section MultiSet.
@@ -534,13 +548,14 @@ Section Mboxes.
       empty_sound MultiSetMbox MultiSetMbox_alpha MultiSetMboxEmpty.
     Proof. auto. Qed.
     Hint Resolve MultiSet_empty_sound.
+    Check MultiSet_empty_sound.
 
-    Definition MultiSetMbox_push (m : Message) (mb : MultiSetMbox) : MultiSetMbox :=
+    Definition MultiSetMbox_enq (m : Message) (mb : MultiSetMbox) : MultiSetMbox :=
       fun m' => if Message_eq_dec2 m m' then S (mb m) else mb m'.
 
-    Lemma MultiSetMbox_push_sound : push_sound MultiSetMbox MultiSetMbox_alpha MultiSetMbox_push.
+    Lemma MultiSetMbox_enq_sound : enq_sound MultiSetMbox MultiSetMbox_alpha MultiSetMbox_enq.
     Proof.
-      unfold push_sound. intros. unfold MultiSetMbox_push.
+      unfold enq_sound. intros. unfold MultiSetMbox_enq.
       induction mb as [| m' mb'].
       - (* empty mb *)
         reflexivity.
@@ -559,7 +574,8 @@ Section Mboxes.
             destruct (Message_eq_dec2 m' m''); subst; auto.
             ---- exfalso; apply n; reflexivity.
     Qed.
-    Hint Resolve MultiSetMbox_push_sound.
+    Hint Resolve MultiSetMbox_enq_sound.
+    Check MultiSetMbox_enq_sound.
 
     (*
     Inductive MultiSetMbox_size : (MultiSetMbox -> NatInf -> Prop) :=
@@ -570,27 +586,27 @@ Section Mboxes.
           (fun m' => if Message_eq_dec2 m m' then S (mb m) else mb m')
           (Nat (S n)).
 
-    Lemma MultiSetMbox_size_push_S : forall mb m n,
-        MultiSetMbox_size (MultiSetMbox_push m (MultiSetMbox_alpha mb)) (Nat (S n)) ->
+    Lemma MultiSetMbox_size_enq_S : forall mb m n,
+        MultiSetMbox_size (MultiSetMbox_enq m (MultiSetMbox_alpha mb)) (Nat (S n)) ->
         MultiSetMbox_size (MultiSetMbox_alpha mb) (Nat n).
     Proof.
       intros.
       induction mb.
       (* mb empty *)
       simpl. inversion H; subst.
-      unfold MultiSetMbox_push in H0.
+      unfold MultiSetMbox_enq in H0.
 *)
 
     Inductive MultiSetMbox_size : (MultiSetMbox -> NatInf -> Prop) :=
     | MultiSetMbox_size_empty : MultiSetMbox_size MultiSetMboxEmpty (Nat 0)
-    | MultiSetMbox_size_push : forall m mb n,
+    | MultiSetMbox_size_enq : forall m mb n,
         MultiSetMbox_size mb (Nat n) ->
-        MultiSetMbox_size (MultiSetMbox_push m mb) (Nat (S n)).
+        MultiSetMbox_size (MultiSetMbox_enq m mb) (Nat (S n)).
 
-    Lemma empty_not_push : forall m mb, MultiSetMbox_push m mb <> MultiSetMboxEmpty.
+    Lemma empty_not_enq : forall m mb, MultiSetMbox_enq m mb <> MultiSetMboxEmpty.
     Proof.
       red; intros.
-      unfold MultiSetMbox_push in H.
+      unfold MultiSetMbox_enq in H.
       unfold MultiSetMboxEmpty in H.
       assert (forall (f g : Message -> nat), f = g -> f m = g m).
       intros. rewrite H0. reflexivity.
@@ -599,7 +615,7 @@ Section Mboxes.
     Qed.
 
     Lemma MultiSetMbox_alpha_cons : forall mb m,
-        MultiSetMbox_alpha (MboxCons m mb) = MultiSetMbox_push m (MultiSetMbox_alpha mb).
+        MultiSetMbox_alpha (MboxCons m mb) = MultiSetMbox_enq m (MultiSetMbox_alpha mb).
     Proof. reflexivity. Qed.
 
     Lemma MultiSetMbox_size_unique : forall mb n n',
@@ -609,9 +625,9 @@ Section Mboxes.
     Proof.
     Admitted.
 
-    Lemma MultiSetMbox_size_push_S_oneway : forall mb m n,
+    Lemma MultiSetMbox_size_enq_S_oneway : forall mb m n,
         MultiSetMbox_size (MultiSetMbox_alpha mb) (Nat n) ->
-        MultiSetMbox_size (MultiSetMbox_push m (MultiSetMbox_alpha mb)) (Nat (S n)).
+        MultiSetMbox_size (MultiSetMbox_enq m (MultiSetMbox_alpha mb)) (Nat (S n)).
     Proof.
       intros.
       inversion H; subst.
@@ -619,20 +635,20 @@ Section Mboxes.
       inversion H; subst. constructor. rewrite H0. assumption.
     Qed.
 
-    Lemma MultiSetMbox_size_push_S : forall mb m n,
-        MultiSetMbox_size (MultiSetMbox_push m (MultiSetMbox_alpha mb)) (Nat (S n)) ->
+    Lemma MultiSetMbox_size_enq_S : forall mb m n,
+        MultiSetMbox_size (MultiSetMbox_enq m (MultiSetMbox_alpha mb)) (Nat (S n)) ->
         MultiSetMbox_size (MultiSetMbox_alpha mb) (Nat n).
     Proof.
       intros. generalize dependent n; induction mb; intros.
       (* empty *)
       simpl. unfold MultiSetMbox_alpha in H.
       (* assertion *)
-      assert (MultiSetMbox_size (MultiSetMbox_push m MultiSetMboxEmpty) (Nat 1)).
+      assert (MultiSetMbox_size (MultiSetMbox_enq m MultiSetMboxEmpty) (Nat 1)).
       intros. constructor. constructor.
       (* end of assertion *)
-      apply (MultiSetMbox_size_unique (MultiSetMbox_push m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor.
-      apply (MultiSetMbox_size_unique (MultiSetMbox_push m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor. constructor.
-      apply (MultiSetMbox_size_unique (MultiSetMbox_push m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor. constructor. constructor. constructor.
+      apply (MultiSetMbox_size_unique (MultiSetMbox_enq m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor.
+      apply (MultiSetMbox_size_unique (MultiSetMbox_enq m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor. constructor.
+      apply (MultiSetMbox_size_unique (MultiSetMbox_enq m MultiSetMboxEmpty) (S n) 1) in H. inversion H; subst. constructor. constructor. constructor. constructor.
       rewrite MultiSetMbox_alpha_cons.
       rewrite MultiSetMbox_alpha_cons in H.
       
@@ -644,7 +660,7 @@ Section Mboxes.
       induction mb; intros.
       (* mbox empty *)
       simpl. inversion H; subst; auto; try constructor.
-      exfalso. apply (empty_not_push m mb). assumption.
+      exfalso. apply (empty_not_enq m mb). assumption.
       (* mbox not empty *)
       rewrite MultiSetMbox_alpha_cons in H.
       destruct n.
@@ -652,29 +668,29 @@ Section Mboxes.
       destruct n.
       (* n is 0 *)
       inversion H.
-      exfalso. apply (empty_not_push m (MultiSetMbox_alpha mb)).
+      exfalso. apply (empty_not_enq m (MultiSetMbox_alpha mb)).
       apply eq_sym. assumption.
       (* n is S n *)
       simpl. apply NatInf_subsumed_elim_S.
       apply (IHmb (Nat n)).
-      apply (MultiSetMbox_size_push_S mb m n).
+      apply (MultiSetMbox_size_enq_S mb m n).
       apply H.
       (* n is Inf *)
       constructor.
     Qed.
-
     Hint Resolve MultiSetMbox_size_sound.
+    Check MultiSetMbox_size_sound.
 
-    Inductive MultiSetMbox_pop (mb : MultiSetMbox) : (Ensemble (Message * MultiSetMbox)) :=
-    | MultiSetMbox_pop_main : forall m,
+    Inductive MultiSetMbox_deq (mb : MultiSetMbox) : (Ensemble (Message * MultiSetMbox)) :=
+    | MultiSetMbox_deq_main : forall m,
         mb m > 0 ->
         In (Message * MultiSetMbox)
-           (MultiSetMbox_pop mb) (m, fun m' => if Message_eq_dec2 m m' then (mb m) - 1 else mb m').
+           (MultiSetMbox_deq mb) (m, fun m' => if Message_eq_dec2 m m' then (mb m) - 1 else mb m').
 
-    Lemma MultiSetMbox_pop_sound :
-      pop_sound MultiSetMbox MultiSetMbox_alpha MultiSetMbox_pop.
+    Lemma MultiSetMbox_deq_sound :
+      deq_sound MultiSetMbox MultiSetMbox_alpha MultiSetMbox_deq.
     Proof.
-      unfold pop_sound. intros.
+      unfold deq_sound. intros.
       destruct mb as [| m'' mb''].
       - (* empty mb: not possible *)
         inversion H.
@@ -699,12 +715,13 @@ Section Mboxes.
         -- (* m = m *) apply gt_Sn_O.
         -- (* m <> m: impossible *) exfalso; apply n; reflexivity.
     Qed.
-    Hint Resolve MultiSetMbox_pop_sound.
+    Hint Resolve MultiSetMbox_deq_sound.
+    Check MultiSetMbox_deq_sound.
 
     Theorem MultiSetMbox_sound :
       abstraction_sound MultiSetMbox MultiSetMbox_alpha
                         MultiSetMbox_subsumed
-                        MultiSetMbox_push MultiSetMbox_pop
+                        MultiSetMbox_enq MultiSetMbox_deq
                         MultiSetMbox_size MultiSetMboxEmpty.
     Proof.
       unfold abstraction_sound.
@@ -718,7 +735,7 @@ Section Mboxes.
     Definition BMultiSetMbox : Type := (Message -> NatInf).
     Definition BMultiSetMboxEmpty : BMultiSetMbox := fun m => Nat 0.
 
-    Definition BMultiSetMbox_push (m : Message) (mb : BMultiSetMbox) : BMultiSetMbox :=
+    Definition BMultiSetMbox_enq (m : Message) (mb : BMultiSetMbox) : BMultiSetMbox :=
       fun m' => if Message_eq_dec2 m m' then
                   match mb m with
                   | Inf => Inf
@@ -729,7 +746,7 @@ Section Mboxes.
     Fixpoint BMultiSetMbox_alpha (mb : Mbox) : BMultiSetMbox :=
       match mb with
       | MboxEmpty => BMultiSetMboxEmpty
-      | MboxCons m mb' => BMultiSetMbox_push m (BMultiSetMbox_alpha mb')
+      | MboxCons m mb' => BMultiSetMbox_enq m (BMultiSetMbox_alpha mb')
       end.
 
     Definition BMultiSetMbox_subsumed (mb mb' : BMultiSetMbox) := mb = mb'.
@@ -738,16 +755,17 @@ Section Mboxes.
       empty_sound BMultiSetMbox BMultiSetMbox_alpha BMultiSetMboxEmpty.
     Proof. auto. Qed.
     Hint Resolve BMultiSetMbox_empty_sound.
+    Check BMultiSetMbox_empty_sound.
 
-    Lemma BMultiSetMbox_push_sound :
-      push_sound BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_push.
+    Lemma BMultiSetMbox_enq_sound :
+      enq_sound BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_enq.
     Proof.
-      unfold push_sound. intros.
+      unfold enq_sound. intros.
       induction mb as [| m' mb'].
       - (* empty mb *)
         reflexivity.
       - (* non empty mb *)
-        simpl. rewrite IHmb'. unfold BMultiSetMbox_push.
+        simpl. rewrite IHmb'. unfold BMultiSetMbox_enq.
         apply functional_extensionality. intro m''.
         destruct (Message_eq_dec2 m' m''); subst.
         -- (* m' == m'' *)
@@ -761,22 +779,23 @@ Section Mboxes.
             destruct (Message_eq_dec2 m' m''); subst; auto.
             ---- exfalso; apply n; reflexivity.
     Qed.
-    Hint Resolve BMultiSetMbox_push_sound.
+    Hint Resolve BMultiSetMbox_enq_sound.
+    Check BMultiSetMbox_enq_sound.
 
-    Inductive BMultiSetMbox_pop (mb : BMultiSetMbox) : (Ensemble (Message * BMultiSetMbox)) :=
-    | BMultiSetMbox_pop_finite : forall m n,
+    Inductive BMultiSetMbox_deq (mb : BMultiSetMbox) : (Ensemble (Message * BMultiSetMbox)) :=
+    | BMultiSetMbox_deq_finite : forall m n,
         mb m = Nat n ->
         n > 0 ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop mb) (m, fun m' => if Message_eq_dec2 m m' then Nat (n - 1) else mb m')
-    | BMultiSetMbox_pop_infinite_stay : forall m,
+           (BMultiSetMbox_deq mb) (m, fun m' => if Message_eq_dec2 m m' then Nat (n - 1) else mb m')
+    | BMultiSetMbox_deq_infinite_stay : forall m,
         mb m = Inf ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop mb) (m, mb)
-    | BMultiSetMbox_pop_infinite_back : forall m,
+           (BMultiSetMbox_deq mb) (m, mb)
+    | BMultiSetMbox_deq_infinite_back : forall m,
         mb m = Inf ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop mb) (m, fun m' => if Message_eq_dec2 m m' then Nat max else mb m').
+           (BMultiSetMbox_deq mb) (m, fun m' => if Message_eq_dec2 m m' then Nat max else mb m').
 
     Lemma O_or_gt_dec : forall n, {n = 0} + {n > 0}.
     Proof.
@@ -792,7 +811,7 @@ Section Mboxes.
       inversion H. apply Peano.le_0_n.
       (* non empty mb *)
       simpl in H.
-      unfold BMultiSetMbox_push in H.
+      unfold BMultiSetMbox_enq in H.
       destruct (Message_eq_dec2 m0 m); subst.
       (* m = m0 *)
       destruct (BMultiSetMbox_alpha mb m) as [n'|]; subst.
@@ -809,16 +828,16 @@ Section Mboxes.
       apply IHmb. assumption.
     Qed.
 
-    Lemma BMultiSetMbox_pop_sound :
-      pop_sound BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_pop.
+    Lemma BMultiSetMbox_deq_sound :
+      deq_sound BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_deq.
     Proof.
-      unfold pop_sound. intros.
+      unfold deq_sound. intros.
       destruct mb as [| m'' mb''].
       - (* mb empty: not possible *)
         inversion H.
       - (* mb non empty *)
         inversion H; subst. simpl.
-        unfold BMultiSetMbox_push.
+        unfold BMultiSetMbox_enq.
         remember (BMultiSetMbox_alpha mb') as amb'.
         remember (amb' m).
         destruct n.
@@ -838,7 +857,7 @@ Section Mboxes.
             rewrite S_sub1_same. assumption. reflexivity.
             (* end of assertion *)
             rewrite H1.
-            apply BMultiSetMbox_pop_finite. (* or: constructor. *)
+            apply BMultiSetMbox_deq_finite. (* or: constructor. *)
             assumption. apply gt_Sn_O.
           --- (* n >= max *)
             rewrite Heqamb' in Heqn.
@@ -867,23 +886,24 @@ Section Mboxes.
           rewrite <- H0.
       constructor. apply eq_sym. assumption.
     Qed.
-    Hint Resolve BMultiSetMbox_pop_sound.
+    Hint Resolve BMultiSetMbox_deq_sound.
+    Check BMultiSetMbox_deq_sound.
 
-    (* Same pop as in the implementation *)
-    Inductive BMultiSetMbox_pop_impl (mb : BMultiSetMbox) : (Ensemble (Message * BMultiSetMbox)) :=
-    | BMultiSetMbox_pop_impl_finite : forall m n,
+    (* Same deq as in the implementation *)
+    Inductive BMultiSetMbox_deq_impl (mb : BMultiSetMbox) : (Ensemble (Message * BMultiSetMbox)) :=
+    | BMultiSetMbox_deq_impl_finite : forall m n,
         mb m = Nat n ->
         n > 0 ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop_impl mb) (m, fun m' => if Message_eq_dec2 m m' then Nat (n - 1) else mb m')
-    | BMultiSetMbox_pop_impl_infinite_stay : forall m,
+           (BMultiSetMbox_deq_impl mb) (m, fun m' => if Message_eq_dec2 m m' then Nat (n - 1) else mb m')
+    | BMultiSetMbox_deq_impl_infinite_stay : forall m,
         mb m = Inf ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop_impl mb) (m, mb)
-    | BMultiSetMbox_pop_impl_infinite_remove : forall m,
+           (BMultiSetMbox_deq_impl mb) (m, mb)
+    | BMultiSetMbox_deq_impl_infinite_remove : forall m,
         mb m = Inf ->
         In (Message * BMultiSetMbox)
-           (BMultiSetMbox_pop_impl mb) (m, fun m' => if Message_eq_dec2 m m' then Nat 0 else mb m').
+           (BMultiSetMbox_deq_impl mb) (m, fun m' => if Message_eq_dec2 m m' then Nat 0 else mb m').
 
     Definition BMultiSetMbox_subsumed_impl (mb mb' : BMultiSetMbox) := forall m, NatInf_subsumed_abs (mb m) (mb' m).
 
@@ -893,13 +913,13 @@ Section Mboxes.
       destruct (mb m); constructor.
     Qed.
 
-    Lemma BMultiSetMbox_pop_impl_sound_overapprox :
-      pop_sound_overapprox BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_subsumed_impl BMultiSetMbox_pop_impl.
+    Lemma BMultiSetMbox_deq_impl_sound_overapprox :
+      deq_sound_overapprox BMultiSetMbox BMultiSetMbox_alpha BMultiSetMbox_subsumed_impl BMultiSetMbox_deq_impl.
     Proof.
-      unfold pop_sound_overapprox. intros. destruct mb; inversion H; subst.
+      unfold deq_sound_overapprox. intros. destruct mb; inversion H; subst.
       (* mb not empty *)
       simpl.
-      unfold BMultiSetMbox_push.
+      unfold BMultiSetMbox_enq.
       remember (BMultiSetMbox_alpha mb') as amb'.
       remember (amb' m).
       destruct n.
@@ -979,7 +999,7 @@ Section Mboxes.
     Theorem BMultiSetMbox_sound :
       abstraction_sound BMultiSetMbox BMultiSetMbox_alpha
                         BMultiSetMbox_subsumed
-                        BMultiSetMbox_push BMultiSetMbox_pop
+                        BMultiSetMbox_enq BMultiSetMbox_deq
                         BMultiSetMbox_size BMultiSetMboxEmpty.
     Proof. unfold abstraction_sound. auto. Qed.
   End BMultiSet.
@@ -989,7 +1009,7 @@ Section Mboxes.
     | GraphEmpty : Graph
     | GraphNonEmpty : Ensemble Message -> Ensemble (Message * Message) -> Message -> Message -> Graph.
 
-    Definition Graph_push (m : Message) (mb : Graph) : Graph :=
+    Definition Graph_enq (m : Message) (mb : Graph) : Graph :=
       match mb with
       | GraphEmpty => GraphNonEmpty (Singleton _ m) (Empty_set _) m m
       | GraphNonEmpty V E f l => GraphNonEmpty (Add _ V m) (Add _ E (f, m)) m l
@@ -998,20 +1018,21 @@ Section Mboxes.
     Fixpoint Graph_alpha_helper (mb : Mbox) (amb : Graph) : Graph :=
       match mb with
       | MboxEmpty => amb
-      | MboxCons m mb' => Graph_alpha_helper mb' (Graph_push m amb)
+      | MboxCons m mb' => Graph_alpha_helper mb' (Graph_enq m amb)
       end.
-    (* Note: alpha (m :: mb) = Graph_push m (Graph_alpha mb') would be *incorrect*, because we
+    (* Note: alpha (m :: mb) = Graph_enq m (Graph_alpha mb') would be *incorrect*, because we
        preserve order, and that would therefore represent the mailbox in
-       reverse order, since pushing is performed at the back *)
+       reverse order, since enqing is performed at the back *)
     Definition Graph_alpha (mb : Mbox) : Graph := Graph_alpha_helper mb GraphEmpty.
 
     Lemma Graph_empty_sound :
       empty_sound Graph Graph_alpha GraphEmpty.
     Proof. auto. Qed.
+    Check Graph_empty_sound.
 
     Lemma Graph_alpha_helper_sound : forall m mb amb,
-        Graph_alpha_helper (push m mb) amb =
-        Graph_push m (Graph_alpha_helper mb amb).
+        Graph_alpha_helper (enq m mb) amb =
+        Graph_enq m (Graph_alpha_helper mb amb).
     Proof.
       intros. generalize dependent amb. induction mb; auto.
       intros.
@@ -1019,23 +1040,24 @@ Section Mboxes.
       rewrite IHmb. reflexivity.
     Qed.
 
-    Lemma Graph_push_sound :
-      push_sound Graph Graph_alpha Graph_push.
+    Lemma Graph_enq_sound :
+      enq_sound Graph Graph_alpha Graph_enq.
     Proof.
-      unfold push_sound. intros.
+      unfold enq_sound. intros.
       unfold Graph_alpha. rewrite Graph_alpha_helper_sound. reflexivity.
     Qed.
+    Check Graph_enq_sound.
 
-    Lemma Graph_push_dont_change_last : forall V V' E E' f f' l l' m,
-        Graph_push m (GraphNonEmpty V E f l) = GraphNonEmpty V' E' f' l' ->
+    Lemma Graph_enq_dont_change_last : forall V V' E E' f f' l l' m,
+        Graph_enq m (GraphNonEmpty V E f l) = GraphNonEmpty V' E' f' l' ->
         l = l'.
     Proof.
       intros. simpl in H. inversion H. reflexivity.
     Qed.
 
-    Lemma Graph_push_change_first : forall V V' E E' f f' l l' m amb amb',
-        Graph_push m amb = GraphNonEmpty V E f l ->
-        Graph_push m amb' = GraphNonEmpty V' E' f' l' ->
+    Lemma Graph_enq_change_first : forall V V' E E' f f' l l' m amb amb',
+        Graph_enq m amb = GraphNonEmpty V E f l ->
+        Graph_enq m amb' = GraphNonEmpty V' E' f' l' ->
         f = f'.
     Proof.
       destruct amb; destruct amb'; intros.
@@ -1045,8 +1067,8 @@ Section Mboxes.
       inversion H; subst. inversion H0; subst. reflexivity.
     Qed.
 
-    Lemma Graph_push_monotone : forall V V' E E' f f' l l' m,
-        Graph_push m (GraphNonEmpty V E f l) = GraphNonEmpty V' E' f' l' ->
+    Lemma Graph_enq_monotone : forall V V' E E' f f' l l' m,
+        Graph_enq m (GraphNonEmpty V E f l) = GraphNonEmpty V' E' f' l' ->
         l = l' /\ Included _ V V' /\ Included _ E E'.
     Admitted.
 
@@ -1057,27 +1079,26 @@ Section Mboxes.
     Proof.
       intros. generalize dependent H. generalize dependent H0. generalize dependent amb. generalize dependent amb'.
       simpl. induction mb; simpl.
-      Check Graph_push_change_first.
-      intros. eapply Graph_push_change_first.
+      intros. eapply Graph_enq_change_first.
       apply H. apply H0.
       intros.
     Admitted.
 
-    Inductive Graph_pop : Graph -> (Ensemble (Message * Graph)) :=
-    | Graph_pop_last : forall V E f l,
+    Inductive Graph_deq : Graph -> (Ensemble (Message * Graph)) :=
+    | Graph_deq_last : forall V E f l,
         ~ (exists m, In (Message * Message) E (l, m)) ->
         In (Message * Graph)
-           (Graph_pop (GraphNonEmpty V E f l))
+           (Graph_deq (GraphNonEmpty V E f l))
            (l, GraphEmpty)
-    | Graph_pop_main : forall V E f l l',
+    | Graph_deq_main : forall V E f l l',
         In (Message * Message) E (l, l') ->
         In (Message * Graph)
-           (Graph_pop (GraphNonEmpty V E f l))
+           (Graph_deq (GraphNonEmpty V E f l))
            (l, GraphNonEmpty V E f l').
-    Lemma Grap_pop_sound :
-      pop_sound Graph Graph_alpha Graph_pop.
+    Lemma Grap_deq_sound :
+      deq_sound Graph Graph_alpha Graph_deq.
     Proof.
-      unfold pop_sound. intros.
+      unfold deq_sound. intros.
       destruct mb; inversion H; subst; simpl.
       (* non empty mb *)
       unfold Graph_alpha. simpl.
